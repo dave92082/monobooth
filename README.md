@@ -1,102 +1,134 @@
 # MonoBooth
 
-A simple Windows photo-booth: live camera preview, a countdown, four snapshots, and a printed
-filmstrip. Originally built in 2011 for a wedding on .NET 3.5 + WinForms + EmguCV; rebuilt in 2026
-on modern .NET.
+A simple Windows photo booth: a live camera preview, a "3 · 2 · 1 · Smile!" countdown, four
+snapshots, and a printed 2×6 photo strip. Originally built in 2011 for a wedding; rebuilt in 2026 on
+modern .NET.
 
-## What it does
+---
 
-1. Shows a full-screen live camera preview (kiosk mode).
-2. On **Start**, counts down "3 · 2 · 1 · Smile!" and captures a frame — repeated four times.
-3. Stitches the frames into a bordered vertical filmstrip.
-4. Saves the strip (and the individual frames) to your Pictures folder.
-5. Prints the strip to the default printer — two copies side-by-side by default.
+## For event hosts — install & run
 
-Press **Esc** (or **X**) to exit.
+1. **Download** the latest `MonoBooth-Setup-x.y.z.exe` from the
+   [Releases page](https://github.com/dave92082/monobooth/releases).
+2. **Run it.** It installs MonoBooth and adds a Start-menu (and optional desktop) shortcut. No .NET
+   install is needed — everything is bundled.
+3. **Plug in your webcam** (and your photo printer, if you have one).
+4. **Allow camera access for desktop apps:** Windows **Settings ▸ Privacy & security ▸ Camera**, and
+   turn **"Let desktop apps access your camera"** on. (If this is off, MonoBooth shows "No camera
+   found".)
+5. **Launch MonoBooth.** Press **START**, strike a pose for each of the four shots, and collect your
+   strip. Press **Esc** to exit.
 
-### Branding the booth
+Finished strips and the individual photos are saved to **`Pictures\MonoBooth`**.
 
-Drop a decorative image at `BackgroundImagePath` (event name, logos, a frame). It's stretched to
-fill the screen, and the smaller live preview and photo strip sit on top of it. **Right-drag** the
-preview or the strip to position them over your artwork — the placement is saved to `settings.json`
-on exit. You can also set `PreviewArea` / `StripArea` directly for pixel-free, resolution-independent
-placement.
+### Printing
 
-## Requirements
+MonoBooth sends each strip as a borderless **2×6** print and asks the printer for **2 copies** by
+default. On a dye-sub photo printer loaded with 2×6 media — e.g. a **Kodak 6850** — the printer
+prints and cuts the strips, so you get two ready-to-share 2×6 strips per session. No printer? It just
+skips printing and keeps running.
+
+### Branding the booth for your event
+
+Use your own background art (event name, logos, a decorative frame):
+
+1. Put your image somewhere handy and set `BackgroundImagePath` in the settings file (see below).
+2. Launch MonoBooth. The picture fills the screen and frames the smaller live preview and photo
+   strip.
+3. **Right-drag** the preview or the strip to position them over your artwork — the placement is
+   saved automatically when you exit.
+
+The bundled background already places the strip in its white box and the preview under the
+"monobooth" wordmark, so it works out of the box.
+
+### Settings
+
+Settings live in **`%LOCALAPPDATA%\MonoBooth\settings.json`** (created on first run). Edit it and
+relaunch to apply changes.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `FrameCount` | `4` | Photos per strip. |
+| `CountdownSeconds` | `3` | Countdown before each shot. |
+| `ReviewMilliseconds` | `1200` | Pause showing each shot. |
+| `BorderWidth` | `12` | Border (px) around each photo. |
+| `BorderColor` | `"Black"` | Named colour or `#RRGGBB`. |
+| `FullScreen` | `true` | Borderless kiosk vs. a normal window. |
+| `BackgroundImagePath` | `""` | Your background image; empty uses the bundled one. |
+| `PreviewArea` | `{45,37,44,42}` | Live-preview box as `{X,Y,Width,Height}` percentages of the screen. |
+| `StripArea` | `{12.5,10.5,19,82}` | Photo-strip box, same percentage format. |
+| `OutputDirectory` | `"{Pictures}/MonoBooth"` | Where photos are saved (`{Pictures}` = your Pictures folder). |
+| `PreferredCamera` | `""` | Camera name substring (e.g. `"Logitech"`); empty picks the first. |
+| `PrintEnabled` | `true` | Send strips to the default printer. |
+| `PrintCopies` | `2` | Number of 2×6 strips per session (the printer's copy count). |
+
+If you ever want to start fresh, delete `settings.json` and relaunch.
+
+---
+
+## For developers
+
+### Requirements
 
 - Windows 10 (build 19041 / version 2004) or newer.
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) to build; the .NET 8 Desktop
-  Runtime to run a published copy.
-- A webcam (USB or built-in).
-- **Camera permission for desktop apps:** Settings ▸ Privacy & security ▸ Camera ▸
-  *Let desktop apps access your camera* must be **On**. Without it the app shows
-  "No camera found".
+- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
+- A webcam.
 
-## Build & run
+### Build & run
 
 ```sh
 cd src/MonoBooth
 dotnet run -c Release
 ```
 
-Or build a self-contained kiosk you can copy to the booth PC:
+Build a self-contained copy (no .NET install required to run it):
 
 ```sh
 dotnet publish src/MonoBooth -c Release -r win-x64 --self-contained
 ```
 
-## Configuration
+### Build the installer
 
-Settings live in `settings.json` next to the executable (created on first run). The file is
-re-read at startup, so tweak and relaunch.
+The installer is [Inno Setup](https://jrsoftware.org/isinfo.php). After publishing (above), compile:
 
-| Key | Default | Meaning |
-| --- | --- | --- |
-| `FrameCount` | `4` | Photos per filmstrip. |
-| `CountdownSeconds` | `3` | Count down before each shot. |
-| `ReviewMilliseconds` | `1200` | Pause after each shot. |
-| `BorderWidth` | `12` | Border (px) around each photo. |
-| `BorderColor` | `"Black"` | Named colour or `#RRGGBB`. |
-| `FullScreen` | `true` | Borderless kiosk vs. a normal window. |
-| `BackgroundImagePath` | `""` | Custom backdrop; empty uses the bundled image. Stretched to fill the window and framed around the preview + strip. |
-| `PreviewArea` | `{6,9,50,60}` | Live-preview rectangle as `{X,Y,Width,Height}` percentages of the window. |
-| `StripArea` | `{62,9,20,72}` | Photo-strip rectangle, same percentage format. |
-| `OutputDirectory` | `"{Pictures}/MonoBooth"` | Where strips are saved. `{Pictures}` expands to your Pictures folder. |
-| `PreferredCamera` | `""` | Camera name substring (e.g. `"Logitech"`); empty picks the first. |
-| `PrintEnabled` | `true` | Send the strip to the default printer. |
-| `PrintCopies` | `2` | Number of 2×6 strips the printer runs off (sent as the printer's copy count). |
+```sh
+ISCC.exe installer/MonoBooth.iss
+```
 
-### Printing
+The `MonoBooth-Setup-x.y.z.exe` lands in `installer/Output/`.
 
-The strip is sent as a single borderless **2×6** print, and the printer's copy count is set to
-`PrintCopies`. On a dye-sub photo printer loaded with 2×6 media — e.g. a **Kodak 6850** — the printer
-prints and cuts each strip, so the default of **2 copies** hands you two ready 2×6 strips. The page
-targets the printer's 2×6 paper if it has one, otherwise a custom 2×6 size. Set `PrintEnabled` to
-`false` to skip printing.
+### Releases (CI)
 
-## Project layout
+`.github/workflows/release.yml` runs when a GitHub Release is **published**: it publishes the app,
+builds the installer, and attaches `MonoBooth-Setup-*.exe` to the release. You can also run it
+manually from the Actions tab (**Run workflow**) for a test build. To cut a release: tag a version
+(e.g. `v2.0.0`) and publish a Release for it.
+
+### Project layout
 
 ```
 src/MonoBooth/
   Program.cs                     app entry point
-  MainForm.cs                    kiosk UI (preview, overlay, thumbnails, Start)
-  Configuration/AppSettings.cs   JSON settings load/save
+  MainForm.cs                    kiosk UI (preview, overlay, thumbnails, Start, drag-to-arrange)
+  Configuration/                 JSON settings + per-user writable paths
   Camera/                        ICameraService + Windows MediaCapture implementation
   Imaging/FilmstripComposer.cs   stacks frames into the bordered strip
-  Printing/FilmstripPrinter.cs   lays out and prints the strip
+  Printing/FilmstripPrinter.cs   prints the 2×6 strip
   Session/                       the countdown → capture → save → print flow
+installer/MonoBooth.iss          Inno Setup installer script
+.github/workflows/release.yml    build + package on release
 ```
 
-## What changed in the 2026 rebuild
+### What changed in the 2026 rebuild
 
 - **.NET 3.5 → .NET 8** (`net8.0-windows`), SDK-style project, nullable reference types.
-- **EmguCV/OpenCV native DLLs → Windows `MediaCapture`** — no native binaries to ship; the camera
-  is reached through the built-in WinRT API.
-- **VAkos XML-config DLL → `System.Text.Json`** (`settings.json`).
-- Removed dead code: the gphoto2/DSLR path, the bit.ly/TinyURL URL shortener, and the unused
-  QR-code dependency.
-- **Bug fixes:** the live preview no longer touches the UI from a background thread without
-  marshalling; captured frames and bitmaps are now disposed (no leaks); countdown text is painted
-  as an overlay and can never bleed into the saved photo; the app no longer crashes when no printer
-  is attached; output files go to a tidy folder instead of GUID-named files in the working
-  directory.
+- **EmguCV/OpenCV native DLLs → Windows `MediaCapture`** — no native binaries to ship; the camera is
+  reached through the built-in WinRT API.
+- **VAkos XML-config DLL → `System.Text.Json`**; settings live in a per-user writable folder so the
+  app works when installed under Program Files.
+- Removed dead code: the gphoto2/DSLR path, the bit.ly/TinyURL URL shortener, and the unused QR-code
+  dependency.
+- **Bug fixes:** the preview no longer touches the UI from a background thread; a steady render timer
+  drives repaints (no starved thumbnails/flash); frames and bitmaps are disposed (no leaks); the
+  countdown is an overlay that can't bleed into a saved photo; the app survives having no printer;
+  output goes to a tidy folder instead of GUID-named files in the working directory.

@@ -1,0 +1,62 @@
+name: Release
+
+# Builds the app + Windows installer and attaches the installer to the GitHub Release.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to stamp (e.g. 2.0.0). Defaults to 0.0.0 for test builds."
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Determine version
+        id: ver
+        run: |
+          $v = "${{ github.event.release.tag_name }}"
+          if (-not $v) { $v = "${{ github.event.inputs.version }}" }
+          if (-not $v) { $v = "0.0.0" }
+          $v = $v.TrimStart('v')
+          "version=$v" >> $env:GITHUB_OUTPUT
+          Write-Host "Building version $v"
+
+      - name: Publish (self-contained, win-x64)
+        run: dotnet publish src/MonoBooth/MonoBooth.csproj -c Release -r win-x64 --self-contained -p:Version=${{ steps.ver.outputs.version }}
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          & $iscc "installer\MonoBooth.iss" "/DMyAppVersion=${{ steps.ver.outputs.version }}"
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MonoBooth-Setup-${{ steps.ver.outputs.version }}
+          path: installer/Output/*.exe
+
+      - name: Attach installer to release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $asset = Get-ChildItem installer/Output/*.exe | Select-Object -First 1
+          gh release upload "${{ github.event.release.tag_name }}" $asset.FullName --clobber

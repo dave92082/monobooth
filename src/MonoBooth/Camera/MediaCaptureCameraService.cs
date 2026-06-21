@@ -1,6 +1,7 @@
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
+using MonoBooth.Configuration;
 using Windows.Media.Capture;
 using Windows.Media.Capture.Frames;
 using Windows.Media.MediaProperties;
@@ -29,8 +30,7 @@ public sealed class MediaCaptureCameraService : ICameraService
     private static readonly string[] PreferredSubtypes =
         { "NV12", "YUY2", "UYVY", "RGB24", "ARGB32", "RGB32", "BGRA8" };
 
-    private static readonly string LogPath =
-        Path.Combine(AppContext.BaseDirectory, "monobooth-camera.log");
+    private static readonly string LogPath = AppPaths.CameraLog;
 
     public MediaCaptureCameraService(string preferredCamera = "")
     {

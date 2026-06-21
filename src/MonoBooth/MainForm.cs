@@ -38,7 +38,7 @@ public sealed class MainForm : Form
 
     public MainForm()
     {
-        _settingsPath = Path.Combine(AppContext.BaseDirectory, "settings.json");
+        _settingsPath = AppPaths.SettingsFile;
         _settings = AppSettings.Load(_settingsPath);
         _camera = new MediaCaptureCameraService(_settings.PreferredCamera);
 
