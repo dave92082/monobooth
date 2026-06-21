@@ -1,0 +1,15 @@
+{
+  "FrameCount": 4,
+  "CountdownSeconds": 3,
+  "ReviewMilliseconds": 1200,
+  "BorderWidth": 12,
+  "BorderColor": "Black",
+  "FullScreen": true,
+  "BackgroundImagePath": "",
+  "PreviewArea": { "X": 45, "Y": 37, "Width": 44, "Height": 42 },
+  "StripArea": { "X": 12.5, "Y": 10.5, "Width": 19, "Height": 82 },
+  "OutputDirectory": "{Pictures}/MonoBooth",
+  "PreferredCamera": "",
+  "PrintEnabled": true,
+  "PrintCopies": 2
+}

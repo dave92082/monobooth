@@ -1,0 +1,39 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio / Rider
+.vs/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*. suo
+*.DotSettings.user
+
+# Rider / ReSharper
+_ReSharper*/
+*.[Rr]e[Ss]harper
+
+# NuGet
+*.nupkg
+packages/
+.nuget/
+
+# Installer build output
+installer/Output/
+
+# OS noise
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# MonoBooth runtime output (captured photos / filmstrips) and diagnostics
+captures/
+photos/
+*.local.json
+monobooth-camera.log
