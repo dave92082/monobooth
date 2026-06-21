@@ -64,7 +64,15 @@ re-read at startup, so tweak and relaunch.
 | `OutputDirectory` | `"{Pictures}/MonoBooth"` | Where strips are saved. `{Pictures}` expands to your Pictures folder. |
 | `PreferredCamera` | `""` | Camera name substring (e.g. `"Logitech"`); empty picks the first. |
 | `PrintEnabled` | `true` | Send the strip to the default printer. |
-| `PrintCopies` | `2` | Strips laid out side-by-side per page. |
+| `PrintCopies` | `2` | Number of 2×6 strips the printer runs off (sent as the printer's copy count). |
+
+### Printing
+
+The strip is sent as a single borderless **2×6** print, and the printer's copy count is set to
+`PrintCopies`. On a dye-sub photo printer loaded with 2×6 media — e.g. a **Kodak 6850** — the printer
+prints and cuts each strip, so the default of **2 copies** hands you two ready 2×6 strips. The page
+targets the printer's 2×6 paper if it has one, otherwise a custom 2×6 size. Set `PrintEnabled` to
+`false` to skip printing.
 
 ## Project layout
 
