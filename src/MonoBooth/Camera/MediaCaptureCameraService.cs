@@ -2,6 +2,7 @@ using System.Drawing;
 using System.Runtime.InteropServices;
 using Windows.Media.Capture;
 using Windows.Media.Capture.Frames;
+using Windows.Media.MediaProperties;
 
 namespace MonoBooth.Camera;
 
@@ -19,6 +20,16 @@ public sealed class MediaCaptureCameraService : ICameraService
     private MediaFrameReader? _reader;
     private Bitmap? _latest;
     private bool _disposed;
+    private bool _firstFrameLogged;
+    private bool _conversionErrorLogged;
+
+    // Native subtypes we can use directly, best first. Anything else (MJPG, H264, …) is compressed
+    // and would hand us a null SoftwareBitmap, so we steer the source onto one of these.
+    private static readonly string[] PreferredSubtypes =
+        { "NV12", "YUY2", "UYVY", "RGB24", "ARGB32", "RGB32", "BGRA8" };
+
+    private static readonly string LogPath =
+        Path.Combine(AppContext.BaseDirectory, "monobooth-camera.log");
 
     public MediaCaptureCameraService(string preferredCamera = "")
     {
@@ -56,13 +67,32 @@ public sealed class MediaCaptureCameraService : ICameraService
                 ?? _mediaCapture.FrameSources.Values.FirstOrDefault();
 
             if (colorSource is null)
+            {
+                Log("No frame source found.");
                 return false;
+            }
 
             DeviceName = group.DisplayName;
+            Log($"Camera: {group.DisplayName}");
 
-            _reader = await _mediaCapture.CreateFrameReaderAsync(colorSource);
+            await TrySelectUncompressedFormat(colorSource);
+
+            // Ask the reader to deliver BGRA8 frames. The capture pipeline transcodes from whatever
+            // the camera streams natively (NV12/YUY2/MJPG/…), so we always get a usable SoftwareBitmap.
+            try
+            {
+                _reader = await _mediaCapture.CreateFrameReaderAsync(colorSource, MediaEncodingSubtypes.Bgra8);
+                Log("Frame reader requesting BGRA8 output.");
+            }
+            catch (Exception ex) when (ex is COMException or ArgumentException or InvalidOperationException)
+            {
+                _reader = await _mediaCapture.CreateFrameReaderAsync(colorSource);
+                Log($"BGRA8 reader unavailable ({ex.GetType().Name}); using native format.");
+            }
+
             _reader.FrameArrived += OnFrameArrived;
             var status = await _reader.StartAsync();
+            Log($"Reader start status: {status}");
 
             IsRunning = status is MediaFrameReaderStartStatus.Success;
             return IsRunning;
@@ -70,7 +100,70 @@ public sealed class MediaCaptureCameraService : ICameraService
         catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException or COMException)
         {
             // No camera, camera in use, or privacy settings block desktop-app access.
+            Log($"StartAsync failed: {ex.GetType().Name}: {ex.Message}");
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Points the source at an uncompressed format so frames decode to a SoftwareBitmap cheaply.
+    /// Prefers a sensible resolution (largest at or below 1080p). Best-effort: errors are ignored.
+    /// </summary>
+    private async Task TrySelectUncompressedFormat(MediaFrameSource source)
+    {
+        try
+        {
+            MediaFrameFormat? best = null;
+            int bestRank = int.MaxValue;
+            long bestPixels = 0;
+
+            foreach (var format in source.SupportedFormats)
+            {
+                if (format.VideoFormat is null)
+                    continue;
+
+                int rank = Array.IndexOf(PreferredSubtypes, (format.Subtype ?? "").ToUpperInvariant());
+                if (rank < 0)
+                    continue; // compressed / unknown subtype
+
+                long pixels = (long)format.VideoFormat.Width * format.VideoFormat.Height;
+                if (pixels > 1280L * 720L)
+                    continue; // 720p is plenty for preview + print, and keeps the copy cheap
+
+                bool better = rank < bestRank || (rank == bestRank && pixels > bestPixels);
+                if (better)
+                {
+                    best = format;
+                    bestRank = rank;
+                    bestPixels = pixels;
+                }
+            }
+
+            if (best is not null)
+            {
+                await source.SetFormatAsync(best);
+                Log($"Source format set to {best.Subtype} {best.VideoFormat.Width}x{best.VideoFormat.Height}.");
+            }
+            else
+            {
+                Log("No uncompressed source format available; relying on reader transcode.");
+            }
+        }
+        catch (Exception ex) when (ex is COMException or InvalidOperationException)
+        {
+            Log($"SetFormat failed: {ex.GetType().Name}; continuing.");
+        }
+    }
+
+    private static void Log(string message)
+    {
+        try
+        {
+            File.AppendAllText(LogPath, $"{DateTime.Now:HH:mm:ss.fff}  {message}{Environment.NewLine}");
+        }
+        catch
+        {
+            // Diagnostics must never affect runtime behaviour.
         }
     }
 
@@ -95,15 +188,34 @@ public sealed class MediaCaptureCameraService : ICameraService
         using var frame = sender.TryAcquireLatestFrame();
         var softwareBitmap = frame?.VideoMediaFrame?.SoftwareBitmap;
         if (softwareBitmap is null)
+        {
+            if (!_firstFrameLogged)
+            {
+                _firstFrameLogged = true;
+                Log($"First frame: SoftwareBitmap is null (frame={(frame is null ? "null" : "present")}).");
+            }
             return;
+        }
+
+        if (!_firstFrameLogged)
+        {
+            _firstFrameLogged = true;
+            Log($"First frame OK: {softwareBitmap.BitmapPixelFormat} " +
+                $"{softwareBitmap.PixelWidth}x{softwareBitmap.PixelHeight}.");
+        }
 
         Bitmap bitmap;
         try
         {
             bitmap = SoftwareBitmapConverter.ToBitmap(softwareBitmap);
         }
-        catch
+        catch (Exception ex)
         {
+            if (!_conversionErrorLogged)
+            {
+                _conversionErrorLogged = true; // log once, don't spam per frame
+                Log($"Frame conversion failed: {ex.GetType().Name}: {ex.Message}");
+            }
             return; // A single bad frame should never tear down the stream.
         }
 

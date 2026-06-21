@@ -10,7 +10,6 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>MonoBooth</RootNamespace>
     <AssemblyName>MonoBooth</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>

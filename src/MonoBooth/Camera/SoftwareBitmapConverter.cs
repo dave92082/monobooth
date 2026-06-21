@@ -2,6 +2,8 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using Windows.Graphics.Imaging;
+using Windows.Storage.Streams;
+using Buffer = Windows.Storage.Streams.Buffer;
 
 namespace MonoBooth.Camera;
 
@@ -9,19 +11,16 @@ namespace MonoBooth.Camera;
 /// Converts a WinRT <see cref="SoftwareBitmap"/> (what MediaCapture hands us) into a GDI+
 /// <see cref="Bitmap"/> (what WinForms and the filmstrip compositor understand).
 /// </summary>
+/// <remarks>
+/// Uses only projected WinRT APIs (<see cref="SoftwareBitmap.CopyToBuffer"/> + a
+/// <see cref="DataReader"/>) to pull the pixels out. The older UWP trick of QI-casting a
+/// <c>BitmapBuffer</c> reference to a custom <c>IMemoryBufferByteAccess</c> COM interface throws an
+/// <see cref="InvalidCastException"/> under the modern C#/WinRT projection, so we avoid it entirely.
+/// </remarks>
 internal static class SoftwareBitmapConverter
 {
-    // COM interface that lets us reach the raw bytes behind a BitmapBuffer reference.
-    [ComImport]
-    [Guid("5B0D3235-4DBA-4D44-865E-8F1D0E4FD04D")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private unsafe interface IMemoryBufferByteAccess
-    {
-        void GetBuffer(out byte* buffer, out uint capacity);
-    }
-
     /// <summary>Returns a new <see cref="Bitmap"/>; the caller owns and must dispose it.</summary>
-    public static unsafe Bitmap ToBitmap(SoftwareBitmap source)
+    public static Bitmap ToBitmap(SoftwareBitmap source)
     {
         // GDI+ wants Bgra8 / premultiplied. Convert only when the source isn't already in that shape.
         SoftwareBitmap? converted = null;
@@ -38,26 +37,35 @@ internal static class SoftwareBitmapConverter
         {
             int width = src.PixelWidth;
             int height = src.PixelHeight;
+            int byteCount = checked(4 * width * height);
+
+            // Pull the Bgra8 pixels (tightly packed, stride == 4 * width) into a managed array.
+            var pixels = new byte[byteCount];
+            var winrtBuffer = new Buffer((uint)byteCount);
+            src.CopyToBuffer(winrtBuffer);
+            using (var reader = DataReader.FromBuffer(winrtBuffer))
+            {
+                reader.ReadBytes(pixels);
+            }
+
             var bitmap = new Bitmap(width, height, PixelFormat.Format32bppPArgb);
             var rect = new Rectangle(0, 0, width, height);
             var data = bitmap.LockBits(rect, ImageLockMode.WriteOnly, PixelFormat.Format32bppPArgb);
             try
             {
-                using var buffer = src.LockBuffer(BitmapBufferAccessMode.Read);
-                using var reference = buffer.CreateReference();
-                ((IMemoryBufferByteAccess)reference).GetBuffer(out byte* srcBytes, out _);
-
-                var plane = buffer.GetPlaneDescription(0);
-                var destBase = (byte*)data.Scan0;
-                long rowBytes = Math.Min(plane.Stride, Math.Abs(data.Stride));
-
-                for (int y = 0; y < height; y++)
+                int sourceStride = 4 * width;
+                if (data.Stride == sourceStride)
                 {
-                    Buffer.MemoryCopy(
-                        srcBytes + plane.StartIndex + (long)plane.Stride * y,
-                        destBase + (long)data.Stride * y,
-                        data.Stride,
-                        rowBytes);
+                    Marshal.Copy(pixels, 0, data.Scan0, byteCount);
+                }
+                else
+                {
+                    // GDI+ may pad rows; copy a row at a time to respect the destination stride.
+                    for (int y = 0; y < height; y++)
+                    {
+                        Marshal.Copy(pixels, y * sourceStride,
+                            IntPtr.Add(data.Scan0, y * data.Stride), sourceStride);
+                    }
                 }
             }
             finally
