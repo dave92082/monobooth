@@ -82,8 +82,9 @@ public sealed class MainForm : Form
         // the event. LayoutControls() applies the configured percentages; right-drag repositions.
 
         // Live preview: owner-drawn in PaintPreview (camera frame + flash + overlay), so the
-        // countdown text can never bleed into a saved photo.
-        _preview.BackColor = Color.Black;
+        // countdown text can never bleed into a saved photo. Transparent background so any
+        // letterbox around the video shows the framing artwork instead of black bars.
+        _preview.BackColor = Color.Transparent;
         _preview.Paint += PaintPreview;
         EnableDrag(_preview, _preview);
         Controls.Add(_preview);
@@ -100,7 +101,8 @@ public sealed class MainForm : Form
             var box = new PictureBox
             {
                 Dock = DockStyle.Fill,
-                BackColor = Color.FromArgb(30, 30, 36),
+                // White so empty cells / letterbox bars blend into the white box on the background.
+                BackColor = Color.White,
                 SizeMode = PictureBoxSizeMode.Zoom,
                 Margin = new Padding(3),
             };

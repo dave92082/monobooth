@@ -63,11 +63,15 @@ public sealed class AppSettings
     /// <summary>
     /// Where the live preview sits over the background (percent of the window). Kept deliberately
     /// smaller than the screen so a decorative/event background frames it. Right-drag to reposition.
+    /// Default is tuned to the bundled background: the open area under the "monobooth" wordmark.
     /// </summary>
-    public LayoutArea PreviewArea { get; set; } = new() { X = 6, Y = 9, Width = 50, Height = 60 };
+    public LayoutArea PreviewArea { get; set; } = new() { X = 45, Y = 37, Width = 44, Height = 42 };
 
-    /// <summary>Where the photo strip sits over the background (percent of the window).</summary>
-    public LayoutArea StripArea { get; set; } = new() { X = 62, Y = 9, Width = 20, Height = 72 };
+    /// <summary>
+    /// Where the photo strip sits over the background (percent of the window). Default lands inside
+    /// the white box on the bundled background.
+    /// </summary>
+    public LayoutArea StripArea { get; set; } = new() { X = 12.5f, Y = 10.5f, Width = 19, Height = 82 };
 
     /// <summary>
     /// Where finished filmstrips and individual frames are written. Supports the token
