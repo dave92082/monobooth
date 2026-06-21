@@ -1,0 +1,13 @@
+{
+  "FrameCount": 4,
+  "CountdownSeconds": 3,
+  "ReviewMilliseconds": 1200,
+  "BorderWidth": 12,
+  "BorderColor": "Black",
+  "FullScreen": true,
+  "BackgroundImagePath": "",
+  "OutputDirectory": "{Pictures}/MonoBooth",
+  "PreferredCamera": "",
+  "PrintEnabled": true,
+  "PrintCopies": 2
+}
