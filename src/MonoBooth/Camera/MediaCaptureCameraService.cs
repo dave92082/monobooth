@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using Windows.Media.Capture;
 using Windows.Media.Capture.Frames;
@@ -239,6 +240,31 @@ public sealed class MediaCaptureCameraService : ICameraService
         {
             return _latest is null ? null : new Bitmap(_latest);
         }
+    }
+
+    public bool TryRenderLatest(Graphics graphics, Rectangle bounds)
+    {
+        lock (_sync)
+        {
+            if (_latest is null || bounds.Width <= 0 || bounds.Height <= 0)
+                return false;
+
+            var dest = FitCentered(_latest.Width, _latest.Height, bounds);
+            graphics.InterpolationMode = InterpolationMode.Bilinear;
+            graphics.DrawImage(_latest, dest);
+            return true;
+        }
+    }
+
+    /// <summary>Aspect-fit a source size inside <paramref name="bounds"/>, centred (letterboxed).</summary>
+    private static Rectangle FitCentered(int sourceWidth, int sourceHeight, Rectangle bounds)
+    {
+        float scale = Math.Min((float)bounds.Width / sourceWidth, (float)bounds.Height / sourceHeight);
+        int width = Math.Max(1, (int)(sourceWidth * scale));
+        int height = Math.Max(1, (int)(sourceHeight * scale));
+        int x = bounds.X + (bounds.Width - width) / 2;
+        int y = bounds.Y + (bounds.Height - height) / 2;
+        return new Rectangle(x, y, width, height);
     }
 
     public void Dispose()

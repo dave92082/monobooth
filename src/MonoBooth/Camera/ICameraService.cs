@@ -27,4 +27,11 @@ public interface ICameraService : IDisposable
     /// The caller owns the returned <see cref="Bitmap"/> and must dispose it.
     /// </summary>
     Bitmap? GetFrameCopy();
+
+    /// <summary>
+    /// Draws the most recent frame, aspect-fit and centred, into <paramref name="bounds"/> without
+    /// allocating a copy. Returns <c>false</c> if no frame has arrived yet. Intended to be called
+    /// from a paint handler driven by a steady render timer.
+    /// </summary>
+    bool TryRenderLatest(Graphics graphics, Rectangle bounds);
 }

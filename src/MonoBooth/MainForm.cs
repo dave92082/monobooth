@@ -22,12 +22,12 @@ public sealed class MainForm : Form
     private readonly PictureBox _preview = new();
     private readonly Button _startButton = new();
     private readonly Label _info = new();
+    private readonly System.Windows.Forms.Timer _renderTimer = new() { Interval = 33 }; // ~30 fps
     private PictureBox[] _thumbs = Array.Empty<PictureBox>();
 
     private string _overlayText = "";
-    private bool _flash;
+    private long _flashUntil;        // Environment.TickCount64 deadline for the white flash
     private bool _showingResult;
-    private int _refreshQueued; // 0/1 guard so preview repaints don't pile up
     private Bitmap? _resultImage;
 
     public MainForm()
@@ -38,7 +38,11 @@ public sealed class MainForm : Form
 
         BuildLayout();
 
-        _camera.FrameReady += OnCameraFrameReady;
+        // A single steady timer drives every preview repaint. Crucially we do NOT post a repaint
+        // per camera frame — at 30-60fps that floods the message queue and starves the low-priority
+        // paints/timers (thumbnails, flash) until the burst stops. The timer keeps the queue calm.
+        _renderTimer.Tick += (_, _) => _preview.Invalidate();
+
         Load += OnLoadAsync;
         FormClosing += OnFormClosing;
         KeyDown += OnKeyDown;
@@ -80,12 +84,12 @@ public sealed class MainForm : Form
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 140f));
 
-        // Live preview with the countdown/flash overlay painted on top.
+        // Live preview: fully owner-drawn in PaintPreview (camera frame + flash + overlay), so the
+        // countdown text can never bleed into a saved photo.
         _preview.Dock = DockStyle.Fill;
         _preview.BackColor = Color.Black;
-        _preview.SizeMode = PictureBoxSizeMode.Zoom;
         _preview.Margin = new Padding(0, 0, 16, 0);
-        _preview.Paint += DrawOverlay;
+        _preview.Paint += PaintPreview;
         root.Controls.Add(_preview, 0, 0);
 
         // Thumbnail strip down the right-hand side, one cell per frame.
@@ -145,6 +149,7 @@ public sealed class MainForm : Form
         root.SetColumnSpan(bottom, 2);
 
         Controls.Add(root);
+        _renderTimer.Start();
     }
 
     private void TrySetBackgroundImage()
@@ -198,48 +203,41 @@ public sealed class MainForm : Form
 
     // ----- Live preview -------------------------------------------------------------------------
 
-    private void OnCameraFrameReady(object? sender, EventArgs e)
-    {
-        // Coalesce: never queue a second repaint while one is still pending.
-        if (Interlocked.Exchange(ref _refreshQueued, 1) == 1)
-            return;
-
-        try
-        {
-            BeginInvoke(UpdatePreview);
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException)
-        {
-            _refreshQueued = 0; // form is closing
-        }
-    }
-
-    private void UpdatePreview()
-    {
-        _refreshQueued = 0;
-        if (_showingResult || IsDisposed)
-            return;
-
-        var frame = _camera.GetFrameCopy();
-        if (frame is null)
-            return;
-
-        var previous = _preview.Image;
-        _preview.Image = frame;
-        previous?.Dispose();
-    }
-
-    private void DrawOverlay(object? sender, PaintEventArgs e)
+    private void PaintPreview(object? sender, PaintEventArgs e)
     {
         var g = e.Graphics;
         var rect = _preview.ClientRectangle;
 
-        if (_flash)
+        // 1) Background: the result strip while reviewing, otherwise the live camera frame.
+        if (_showingResult && _resultImage is not null)
+            DrawImageFitted(g, _resultImage, rect);
+        else
+            _camera.TryRenderLatest(g, rect);
+
+        // 2) The capture flash, time-boxed so the render timer clears it on its own.
+        if (Environment.TickCount64 < _flashUntil)
             g.FillRectangle(Brushes.White, rect);
 
-        if (string.IsNullOrEmpty(_overlayText))
+        // 3) The countdown / status text.
+        if (!string.IsNullOrEmpty(_overlayText))
+            DrawOverlayText(g, rect, _overlayText);
+    }
+
+    private static void DrawImageFitted(Graphics g, Image image, Rectangle bounds)
+    {
+        if (bounds.Width <= 0 || bounds.Height <= 0)
             return;
 
+        float scale = Math.Min((float)bounds.Width / image.Width, (float)bounds.Height / image.Height);
+        int width = Math.Max(1, (int)(image.Width * scale));
+        int height = Math.Max(1, (int)(image.Height * scale));
+        int x = bounds.X + (bounds.Width - width) / 2;
+        int y = bounds.Y + (bounds.Height - height) / 2;
+        g.DrawImage(image, new Rectangle(x, y, width, height));
+    }
+
+    private static void DrawOverlayText(Graphics g, Rectangle rect, string text)
+    {
         g.TextRenderingHint = TextRenderingHint.AntiAlias;
         float size = Math.Max(28f, rect.Height * 0.16f);
         using var font = new Font("Segoe UI", size, FontStyle.Bold, GraphicsUnit.Pixel);
@@ -250,8 +248,8 @@ public sealed class MainForm : Form
         };
 
         var shadow = new RectangleF(rect.X + 3, rect.Y + 3, rect.Width, rect.Height);
-        g.DrawString(_overlayText, font, Brushes.Black, shadow, format);
-        g.DrawString(_overlayText, font, Brushes.White, rect, format);
+        g.DrawString(text, font, Brushes.Black, shadow, format);
+        g.DrawString(text, font, Brushes.White, rect, format);
     }
 
     // ----- Session orchestration ----------------------------------------------------------------
@@ -282,19 +280,9 @@ public sealed class MainForm : Form
 
     private void OnFlashRequested()
     {
-        _flash = true;
+        // Time-boxed flash; the render timer repaints and clears it ~150 ms later.
+        _flashUntil = Environment.TickCount64 + 150;
         _preview.Invalidate();
-        _preview.Update();
-
-        var timer = new System.Windows.Forms.Timer { Interval = 120 };
-        timer.Tick += (_, _) =>
-        {
-            _flash = false;
-            _preview.Invalidate();
-            timer.Stop();
-            timer.Dispose();
-        };
-        timer.Start();
     }
 
     private void OnFrameCaptured(int index, Bitmap thumbnail)
@@ -312,18 +300,12 @@ public sealed class MainForm : Form
 
     private void OnSessionCompleted(SessionResult result)
     {
-        _showingResult = true;
-
         _resultImage?.Dispose();
         _resultImage = result.Filmstrip;
+        _showingResult = true; // PaintPreview now draws the strip instead of the live feed
 
-        var liveFrame = _preview.Image;
-        _preview.Image = _resultImage;
-        liveFrame?.Dispose();
-
-        _overlayText = result.Printed ? "Printing!" : "All done!";
-        _preview.Invalidate();
-        _info.Text = $"Saved to {result.FilmstripPath}";
+        _overlayText = "";
+        _info.Text = (result.Printed ? "Printing!  " : "All done!  ") + $"Saved to {result.FilmstripPath}";
 
         var hold = new System.Windows.Forms.Timer { Interval = 6000 };
         hold.Tick += (_, _) =>
@@ -344,11 +326,9 @@ public sealed class MainForm : Form
 
     private void ReturnToLive()
     {
-        _showingResult = false;
+        _showingResult = false; // PaintPreview switches back to the live feed
         _overlayText = "";
 
-        if (_resultImage is not null && ReferenceEquals(_preview.Image, _resultImage))
-            _preview.Image = null;
         _resultImage?.Dispose();
         _resultImage = null;
 
@@ -382,13 +362,14 @@ public sealed class MainForm : Form
     {
         _settings.Save(_settingsPath);
 
+        _renderTimer.Stop();
+        _renderTimer.Dispose();
+
         try { _sessionCts?.Cancel(); } catch (ObjectDisposedException) { }
         _sessionCts?.Dispose();
 
-        _camera.FrameReady -= OnCameraFrameReady;
         _camera.Dispose();
 
-        _preview.Image?.Dispose();
         _resultImage?.Dispose();
         ClearThumbnails();
     }
