@@ -20,6 +20,7 @@ public sealed class MainForm : Form
     private CancellationTokenSource? _sessionCts;
 
     private readonly PictureBox _preview = new();
+    private readonly TableLayoutPanel _stripPanel = new();
     private readonly Button _startButton = new();
     private readonly Label _info = new();
     private readonly System.Windows.Forms.Timer _renderTimer = new() { Interval = 33 }; // ~30 fps
@@ -29,6 +30,11 @@ public sealed class MainForm : Form
     private long _flashUntil;        // Environment.TickCount64 deadline for the white flash
     private bool _showingResult;
     private Bitmap? _resultImage;
+
+    // Right-drag-to-reposition state (for arranging the preview/strip over a custom background).
+    private Control? _dragTarget;
+    private Point _dragStartScreen;
+    private Point _dragOrigin;
 
     public MainForm()
     {
@@ -71,61 +77,38 @@ public sealed class MainForm : Form
 
         TrySetBackgroundImage();
 
-        var root = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 2,
-            RowCount = 2,
-            BackColor = Color.Transparent,
-            Padding = new Padding(16),
-        };
-        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 78f));
-        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 22f));
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 140f));
+        // Everything is positioned absolutely over the (stretched) background image, and sized
+        // smaller than the screen, so the background frames the preview + strip and can advertise
+        // the event. LayoutControls() applies the configured percentages; right-drag repositions.
 
-        // Live preview: fully owner-drawn in PaintPreview (camera frame + flash + overlay), so the
+        // Live preview: owner-drawn in PaintPreview (camera frame + flash + overlay), so the
         // countdown text can never bleed into a saved photo.
-        _preview.Dock = DockStyle.Fill;
         _preview.BackColor = Color.Black;
-        _preview.Margin = new Padding(0, 0, 16, 0);
         _preview.Paint += PaintPreview;
-        root.Controls.Add(_preview, 0, 0);
+        EnableDrag(_preview, _preview);
+        Controls.Add(_preview);
 
-        // Thumbnail strip down the right-hand side, one cell per frame.
-        var thumbPanel = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            RowCount = _settings.FrameCount,
-            BackColor = Color.Transparent,
-        };
+        // Photo strip: one transparent cell per frame so the background shows between shots.
+        _stripPanel.ColumnCount = 1;
+        _stripPanel.RowCount = _settings.FrameCount;
+        _stripPanel.BackColor = Color.Transparent;
+        EnableDrag(_stripPanel, _stripPanel);
         _thumbs = new PictureBox[_settings.FrameCount];
         for (int i = 0; i < _settings.FrameCount; i++)
         {
-            thumbPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100f / _settings.FrameCount));
+            _stripPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100f / _settings.FrameCount));
             var box = new PictureBox
             {
                 Dock = DockStyle.Fill,
                 BackColor = Color.FromArgb(30, 30, 36),
                 SizeMode = PictureBoxSizeMode.Zoom,
-                Margin = new Padding(2),
+                Margin = new Padding(3),
             };
+            EnableDrag(box, _stripPanel); // grab any thumbnail to move the whole strip
             _thumbs[i] = box;
-            thumbPanel.Controls.Add(box, 0, i);
+            _stripPanel.Controls.Add(box, 0, i);
         }
-        root.Controls.Add(thumbPanel, 1, 0);
-
-        // Bottom bar: Start button + status line, spanning both columns.
-        var bottom = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            RowCount = 2,
-            BackColor = Color.Transparent,
-        };
-        bottom.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
-        bottom.RowStyles.Add(new RowStyle(SizeType.Absolute, 28f));
+        Controls.Add(_stripPanel);
 
         _startButton.Text = "START";
         _startButton.Font = new Font("Segoe UI", 22f, FontStyle.Bold);
@@ -134,22 +117,66 @@ public sealed class MainForm : Form
         _startButton.FlatStyle = FlatStyle.Flat;
         _startButton.FlatAppearance.BorderSize = 0;
         _startButton.Size = new Size(280, 84);
-        _startButton.Anchor = AnchorStyles.None; // centre in its cell
         _startButton.Cursor = Cursors.Hand;
         _startButton.Click += OnStartClicked;
-        bottom.Controls.Add(_startButton, 0, 0);
+        Controls.Add(_startButton);
 
-        _info.Dock = DockStyle.Fill;
+        _info.AutoSize = false;
+        _info.BackColor = Color.Transparent;
         _info.ForeColor = Color.Gainsboro;
         _info.TextAlign = ContentAlignment.MiddleCenter;
-        _info.Text = "Press Esc to exit";
-        bottom.Controls.Add(_info, 0, 1);
+        _info.Text = "Right-drag the preview or strip to arrange them  •  Esc to exit";
+        Controls.Add(_info);
 
-        root.Controls.Add(bottom, 0, 1);
-        root.SetColumnSpan(bottom, 2);
-
-        Controls.Add(root);
+        Resize += (_, _) => LayoutControls();
+        LayoutControls();
         _renderTimer.Start();
+    }
+
+    /// <summary>Positions the preview, strip, Start button and status line from the current config.</summary>
+    private void LayoutControls()
+    {
+        if (ClientSize.Width <= 0 || ClientSize.Height <= 0 || _dragTarget is not null)
+            return;
+
+        _preview.Bounds = _settings.PreviewArea.ToPixels(ClientSize);
+        _stripPanel.Bounds = _settings.StripArea.ToPixels(ClientSize);
+
+        int bw = _startButton.Width, bh = _startButton.Height;
+        _startButton.Location = new Point(
+            (ClientSize.Width - bw) / 2,
+            ClientSize.Height - bh - Math.Max(36, (int)(ClientSize.Height * 0.05)));
+        _info.Bounds = new Rectangle(0, ClientSize.Height - 28, ClientSize.Width, 24);
+    }
+
+    // ----- Right-drag to reposition -------------------------------------------------------------
+
+    private void EnableDrag(Control handle, Control target)
+    {
+        handle.MouseDown += (_, e) =>
+        {
+            if (e.Button != MouseButtons.Right)
+                return;
+            _dragTarget = target;
+            _dragStartScreen = Cursor.Position;
+            _dragOrigin = target.Location;
+        };
+        handle.MouseMove += (_, e) =>
+        {
+            if (_dragTarget != target || e.Button != MouseButtons.Right)
+                return;
+            target.Location = new Point(
+                _dragOrigin.X + (Cursor.Position.X - _dragStartScreen.X),
+                _dragOrigin.Y + (Cursor.Position.Y - _dragStartScreen.Y));
+        };
+        handle.MouseUp += (_, e) =>
+        {
+            if (_dragTarget != target || e.Button != MouseButtons.Right)
+                return;
+            _dragTarget = null;
+            var area = ReferenceEquals(target, _preview) ? _settings.PreviewArea : _settings.StripArea;
+            area.SetFromPixels(target.Bounds, ClientSize);
+        };
     }
 
     private void TrySetBackgroundImage()
@@ -177,6 +204,7 @@ public sealed class MainForm : Form
 
     private async void OnLoadAsync(object? sender, EventArgs e)
     {
+        LayoutControls(); // the form now has its final (maximized) size
         _info.Text = "Starting camera…";
         var started = await _camera.StartAsync();
 

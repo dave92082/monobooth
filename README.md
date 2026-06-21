@@ -14,6 +14,14 @@ on modern .NET.
 
 Press **Esc** (or **X**) to exit.
 
+### Branding the booth
+
+Drop a decorative image at `BackgroundImagePath` (event name, logos, a frame). It's stretched to
+fill the screen, and the smaller live preview and photo strip sit on top of it. **Right-drag** the
+preview or the strip to position them over your artwork — the placement is saved to `settings.json`
+on exit. You can also set `PreviewArea` / `StripArea` directly for pixel-free, resolution-independent
+placement.
+
 ## Requirements
 
 - Windows 10 (build 19041 / version 2004) or newer.
@@ -50,7 +58,9 @@ re-read at startup, so tweak and relaunch.
 | `BorderWidth` | `12` | Border (px) around each photo. |
 | `BorderColor` | `"Black"` | Named colour or `#RRGGBB`. |
 | `FullScreen` | `true` | Borderless kiosk vs. a normal window. |
-| `BackgroundImagePath` | `""` | Custom backdrop; empty uses the bundled image. |
+| `BackgroundImagePath` | `""` | Custom backdrop; empty uses the bundled image. Stretched to fill the window and framed around the preview + strip. |
+| `PreviewArea` | `{6,9,50,60}` | Live-preview rectangle as `{X,Y,Width,Height}` percentages of the window. |
+| `StripArea` | `{62,9,20,72}` | Photo-strip rectangle, same percentage format. |
 | `OutputDirectory` | `"{Pictures}/MonoBooth"` | Where strips are saved. `{Pictures}` expands to your Pictures folder. |
 | `PreferredCamera` | `""` | Camera name substring (e.g. `"Logitech"`); empty picks the first. |
 | `PrintEnabled` | `true` | Send the strip to the default printer. |

@@ -6,6 +6,8 @@
   "BorderColor": "Black",
   "FullScreen": true,
   "BackgroundImagePath": "",
+  "PreviewArea": { "X": 6, "Y": 9, "Width": 50, "Height": 60 },
+  "StripArea": { "X": 62, "Y": 9, "Width": 20, "Height": 72 },
   "OutputDirectory": "{Pictures}/MonoBooth",
   "PreferredCamera": "",
   "PrintEnabled": true,
